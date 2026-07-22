@@ -78,6 +78,22 @@ input,select{border:0.5px solid rgba(60,40,80,0.2);border-radius:8px;padding:8px
 
 /* Admin emploi du temps - vue par collab */
 .edt-collab-hdr{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:12px;background:#fff;border-radius:10px;border:0.5px solid rgba(60,40,80,0.1);}
+
+/* Retours utilisateur : bandeaux, confirmation, erreurs de champ */
+#toasts{position:fixed;right:18px;bottom:18px;z-index:9999;display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
+.toast{display:flex;align-items:center;gap:9px;min-width:230px;max-width:340px;padding:11px 14px;border-radius:10px;font-size:13px;color:#fff;box-shadow:0 6px 22px rgba(42,28,58,0.28);animation:toastin .22s ease;}
+.toast.tok{background:#2a7a5a;}
+.toast.terr{background:#c0392b;}
+.toast-x{background:none;border:none;color:rgba(255,255,255,0.85);cursor:pointer;font-size:13px;padding:0 0 0 4px;line-height:1;}
+@keyframes toastin{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+.modal-ov{position:fixed;inset:0;background:rgba(42,28,58,0.55);display:flex;align-items:center;justify-content:center;z-index:10000;padding:18px;}
+.modal{background:#fff;border-radius:14px;padding:22px;width:360px;max-width:100%;box-shadow:0 18px 50px rgba(42,28,58,0.4);}
+.modal-title{font-size:15px;font-weight:600;color:var(--hm-dark);margin-bottom:8px;}
+.modal-msg{font-size:13px;color:#555;line-height:1.5;margin-bottom:18px;}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;}
+.abtn-danger{background:#c0392b;}.abtn-danger:hover{background:#a93226;}
+.field-err{color:#c0392b;font-size:11px;margin-top:5px;}
+input.field-bad,select.field-bad{border-color:#c0392b;}
 </style>
 </head>
 <body>
@@ -148,6 +164,76 @@ function fmtDate(d){return new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{d
 
 function loadSpin(){return '<div style="text-align:center;padding:40px;"><span class="spinner" style="border-color:rgba(60,40,80,0.2);border-top-color:var(--hm-rose);"></span></div>';}
 
+// ─────────── Retours utilisateur (génériques, réutilisables) ───────────
+let clientsCache=[];          // dernière liste de clients chargée (pour retrouver un nom)
+let currentView=null;         // dernière vue affichée (pour le bouton « Réessayer »)
+
+// Transforme une réponse Supabase en données, ou lève une erreur si échec.
+const pick=r=>{if(r.error)throw r.error;return r.data||[];};
+
+// Bandeau : vert 2,5 s (résultat OK) · rouge 5 s avec ✕ (échec).
+function toast(msg,type='ok'){
+  let box=G('toasts');
+  if(!box){box=document.createElement('div');box.id='toasts';document.body.appendChild(box);}
+  const t=document.createElement('div');
+  t.className='toast '+(type==='err'?'terr':'tok');
+  t.innerHTML=`<span>${type==='err'?'✗':'✓'}</span><span style="flex:1;">${esc(msg)}</span>`;
+  if(type==='err'){const x=document.createElement('button');x.className='toast-x';x.textContent='✕';x.onclick=()=>t.remove();t.appendChild(x);}
+  box.appendChild(t);
+  setTimeout(()=>t.remove(),type==='err'?5000:2500);
+}
+
+// Confirmation bloquante avant une action irréversible. Renvoie true/false.
+// `message` peut contenir du HTML déjà échappé (ex. le nom en gras).
+function confirmAction({title,message,confirmLabel='Confirmer',danger=false}){
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');ov.className='modal-ov';
+    ov.innerHTML=`<div class="modal">
+      <div class="modal-title">${esc(title)}</div>
+      <div class="modal-msg">${message}</div>
+      <div class="modal-btns">
+        <button class="gbtn" data-a="0">Annuler</button>
+        <button class="abtn${danger?' abtn-danger':''}" data-a="1">${esc(confirmLabel)}</button>
+      </div></div>`;
+    const done=v=>{ov.remove();resolve(v);};
+    ov.addEventListener('click',e=>{
+      const a=e.target.getAttribute&&e.target.getAttribute('data-a');
+      if(a==='1')return done(true);
+      if(a==='0'||e.target===ov)return done(false);
+    });
+    document.body.appendChild(ov);
+  });
+}
+
+// Désactive un bouton + libellé « en cours » pendant l'écriture (anti double-clic).
+async function withBusy(btn,label,fn){
+  if(!btn)return fn();
+  const orig=btn.innerHTML,wasDis=btn.disabled;
+  btn.disabled=true;btn.innerHTML=`<span class="spinner"></span>${label?' '+esc(label):''}`;
+  try{return await fn();}
+  finally{btn.disabled=wasDis;btn.innerHTML=orig;}
+}
+
+// Message rouge sous un champ — reste tant que ce n'est pas corrigé.
+function fieldError(id,msg){
+  const f=G(id);if(!f)return;
+  let e=G('fe-'+id);
+  if(!e){e=document.createElement('div');e.id='fe-'+id;e.className='field-err';f.insertAdjacentElement('afterend',e);}
+  e.textContent=msg;f.classList.add('field-bad');
+}
+function clearFieldError(id){const e=G('fe-'+id);if(e)e.remove();const f=G(id);if(f)f.classList.remove('field-bad');}
+
+// Encart affiché quand un écran de lecture ne parvient pas à charger.
+function loadErrorCard(){return `<div class="card" style="text-align:center;padding:28px;"><div style="font-size:24px;margin-bottom:8px;">⚠️</div><div style="font-size:13px;color:var(--hm-dark);margin-bottom:16px;">Impossible de charger les données.</div><button class="abtn" onclick="retryView()">Réessayer</button></div>`;}
+
+// Affiche une vue avec spinner + capture des erreurs de chargement.
+async function show(fn){
+  currentView=fn;
+  G('cont').innerHTML=loadSpin();
+  try{await fn();}catch(e){G('cont').innerHTML=loadErrorCard();}
+}
+function retryView(){if(currentView)show(currentView);}
+
 async function doLogin(){
   const email=G('li-email').value.trim(),pass=G('li-pass').value;
   G('li-err').style.display='none';
@@ -192,7 +278,7 @@ function setupNav(){
 }
 
 function sw(t){cid=null;tab=t;weekOffset=0;document.querySelectorAll('.nbtn').forEach(b=>b.classList.remove('active'));G(`n-${t}`)?.classList.add('active');render();}
-function render(){if(cid!==null){rCollab();return;}({dashboard:rDash,emploi:rEmploi,collaborateurs:rCollabs,clients:rClients,vocal:rVocal,projets:rProjets}[tab])?.();}
+function render(){if(cid!==null){show(rCollab);return;}const fn={dashboard:rDash,emploi:rEmploi,collaborateurs:rCollabs,clients:rClients,vocal:rVocal,projets:rProjets}[tab];if(fn)show(fn);}
 
 const bdg=s=>`<span class="badge ${s==='terminé'?'bok':s==='en cours'?'bwip':'bwait'}">${s}</span>`;
 
@@ -208,13 +294,13 @@ async function rEmploi(){
   if(me.role==='admin'){
     // Admin voit tous les collabs
     const[users,allTasks]=await Promise.all([
-      sb.from('profiles').select('*').eq('role','collab').then(r=>r.data||[]),
-      sb.from('tasks').select('*,profiles(name),clients(name)').gte('date',start).lte('date',end).then(r=>r.data||[])
+      sb.from('profiles').select('*').eq('role','collab').then(pick),
+      sb.from('tasks').select('*,profiles(name),clients(name)').gte('date',start).lte('date',end).then(pick)
     ]);
     renderEdtAdmin(dates,users,allTasks);
   } else {
     // Collab voit son propre planning
-    const myTasks=await sb.from('tasks').select('*,clients(name)').eq('user_id',me.id).gte('date',start).lte('date',end).then(r=>r.data||[]);
+    const myTasks=await sb.from('tasks').select('*,clients(name)').eq('user_id',me.id).gte('date',start).lte('date',end).then(pick);
     renderEdtCollab(dates,myTasks);
   }
 }
@@ -225,9 +311,9 @@ function weekLabel(dates){
 
 function navBar(){
   return `<div class="week-nav">
-    <button class="wnbtn" onclick="weekOffset--;rEmploi()">← Semaine préc.</button>
-    <button class="wnbtn" onclick="weekOffset=0;rEmploi()">Aujourd'hui</button>
-    <button class="wnbtn" onclick="weekOffset++;rEmploi()">Semaine suiv. →</button>
+    <button class="wnbtn" onclick="weekOffset--;render()">← Semaine préc.</button>
+    <button class="wnbtn" onclick="weekOffset=0;render()">Aujourd'hui</button>
+    <button class="wnbtn" onclick="weekOffset++;render()">Semaine suiv. →</button>
     <span class="week-label" id="wk-lbl"></span>
   </div>`;
 }
@@ -324,9 +410,9 @@ function renderEdtAdmin(dates,users,allTasks){
 async function rDash(){
   G('cont').innerHTML=loadSpin();
   const[users,tasks,clients]=await Promise.all([
-    sb.from('profiles').select('*').eq('role','collab').then(r=>r.data||[]),
-    sb.from('tasks').select('*').then(r=>r.data||[]),
-    sb.from('clients').select('*').then(r=>r.data||[])
+    sb.from('profiles').select('*').eq('role','collab').then(pick),
+    sb.from('tasks').select('*').then(pick),
+    sb.from('clients').select('*').then(pick)
   ]);
   const ec=tasks.filter(t=>t.status==='en cours').length;
   const th=tasks.reduce((s,t)=>s+(t.hours||0),0).toFixed(0);
@@ -360,8 +446,8 @@ async function rDash(){
 async function rCollabs(){
   G('cont').innerHTML=loadSpin();
   const[users,tasks]=await Promise.all([
-    sb.from('profiles').select('*').eq('role','collab').then(r=>r.data||[]),
-    sb.from('tasks').select('*').then(r=>r.data||[])
+    sb.from('profiles').select('*').eq('role','collab').then(pick),
+    sb.from('tasks').select('*').then(pick)
   ]);
   G('cont').innerHTML=`<h1 class="stit">Collaborateurs</h1>
     ${users.map(c=>{
@@ -379,13 +465,13 @@ async function rCollabs(){
     }).join('')}`;
 }
 
-async function viewC(uid){cid=uid;rCollab();}
+function viewC(uid){cid=uid;render();}
 async function rCollab(){
   G('cont').innerHTML=loadSpin();
   const[uRes,tasks,notes]=await Promise.all([
-    sb.from('profiles').select('*').eq('id',cid).then(r=>r.data?.[0]),
-    sb.from('tasks').select('*,clients(name)').eq('user_id',cid).order('date',{ascending:false}).then(r=>r.data||[]),
-    sb.from('notes').select('*').eq('user_id',cid).order('date',{ascending:false}).then(r=>r.data||[])
+    sb.from('profiles').select('*').eq('id',cid).then(r=>{if(r.error)throw r.error;return r.data?.[0];}),
+    sb.from('tasks').select('*,clients(name)').eq('user_id',cid).order('date',{ascending:false}).then(pick),
+    sb.from('notes').select('*').eq('user_id',cid).order('date',{ascending:false}).then(pick)
   ]);
   const c=uRes,h=tasks.reduce((s,t)=>s+(t.hours||0),0).toFixed(1);
   G('cont').innerHTML=`
@@ -417,9 +503,10 @@ async function rCollab(){
 async function rClients(){
   G('cont').innerHTML=loadSpin();
   const[clients,tasks]=await Promise.all([
-    sb.from('clients').select('*').order('name').then(r=>r.data||[]),
-    sb.from('tasks').select('client_id').then(r=>r.data||[])
+    sb.from('clients').select('*').order('name').then(pick),
+    sb.from('tasks').select('client_id').then(pick)
   ]);
+  clientsCache=clients;
   const ic=['🔥','🔨','🍽️','🏠','⚡','🎨','🚗','🏗️'];
   G('cont').innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
@@ -434,7 +521,7 @@ async function rClients(){
           <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);">${esc(c.name)}</div><div style="font-size:11px;color:#999;">${esc(c.sector)}</div></div>
         </div>
         <div style="font-size:11px;color:#aaa;">📍 ${esc(c.ville)}</div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;"><span style="font-size:12px;color:var(--hm-rose);">${tasks.filter(t=>t.client_id===c.id).length} tâche(s)</span>${me.role==='admin'?`<button onclick="delClient('${c.id}')" style="background:none;border:none;cursor:pointer;font-size:16px;color:#ccc;" title="Supprimer">🗑️</button>`:''}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;"><span style="font-size:12px;color:var(--hm-rose);">${tasks.filter(t=>t.client_id===c.id).length} tâche(s)</span>${me.role==='admin'?`<button onclick="delClient('${c.id}',this)" style="background:none;border:none;cursor:pointer;font-size:16px;color:#ccc;" title="Supprimer">🗑️</button>`:''}</div>
       </div>`).join('')}
     </div>`;
 }
@@ -454,13 +541,13 @@ function showAddC(){
     <div id="nc-form" style="display:none;">
       <div style="background:var(--hm-light);border-radius:8px;padding:10px;margin-bottom:10px;" id="nc-preview"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
-        <input id="nc-n" placeholder="Nom du client"/>
+        <input id="nc-n" placeholder="Nom du client" oninput="clearFieldError('nc-n')"/>
         <input id="nc-s" placeholder="Secteur"/>
         <input id="nc-v" placeholder="Ville"/>
       </div>
       <input id="nc-siren" placeholder="SIREN" style="margin-bottom:10px;"/>
       <div style="display:flex;gap:7px;">
-        <button onclick="addC()" class="abtn">Enregistrer</button>
+        <button onclick="addC(this)" class="abtn">Enregistrer</button>
         <button onclick="G('acf').style.display='none'" class="gbtn">Annuler</button>
       </div>
     </div>
@@ -522,15 +609,18 @@ function showManual(){
   G('nc-preview').innerHTML='';
 }
 
-async function addC(){
-  const n=G('nc-n').value.trim();if(!n)return;
-  await sb.from('clients').insert({
-    name:n,
-    sector:G('nc-s').value.trim(),
-    ville:G('nc-v').value.trim(),
-    siren:G('nc-siren')?.value?.trim()||null
-  });
-  rClients();
+async function addC(btn){
+  clearFieldError('nc-n');
+  const n=G('nc-n').value.trim();
+  if(!n){fieldError('nc-n','Indique le nom du client.');return;}
+  try{
+    await withBusy(btn,'Enregistrement…',()=>sb.from('clients').insert({
+      name:n,sector:G('nc-s').value.trim(),ville:G('nc-v').value.trim(),
+      siren:G('nc-siren')?.value?.trim()||null
+    }).then(pick));
+    toast('Client ajouté.');
+    render();
+  }catch(e){toast("Impossible d'ajouter le client.",'err');}
 }
 
 const TASK_CATS=[
@@ -543,13 +633,15 @@ const TASK_CATS=[
 ];
 
 async function showAddT(){
-  const clients=await sb.from('clients').select('*').order('name').then(r=>r.data||[]);
+  let clients=[];
+  try{clients=await sb.from('clients').select('*').order('name').then(pick);}
+  catch(e){if(G('atf'))G('atf').innerHTML='<div class="card" style="font-size:12px;color:#c0392b;">Impossible de charger la liste des clients. <button class="bbtn" style="margin:0;" onclick="showAddT()">Réessayer</button></div>';return;}
   if(!G('atf'))return;
   G('atf').innerHTML=`<div class="card">
     <div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:12px;">Nouvelle tâche</div>
     <div style="margin-bottom:14px;">
       <label style="font-size:11px;color:#888;display:block;margin-bottom:5px;">Client concerné</label>
-      <select id="nt-cl" onchange="loadTaskSugg()" style="width:100%;">
+      <select id="nt-cl" onchange="clearFieldError('nt-cl');loadTaskSugg()" style="width:100%;">
         <option value="">Choisir un client...</option>
         ${clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}
       </select>
@@ -559,20 +651,20 @@ async function showAddT(){
       <div id="nt-cats" style="margin-bottom:12px;"></div>
       <div id="nt-tasks-wrap" style="margin-bottom:12px;display:none;">
         <div id="nt-tasks" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
-        <input id="nt-ti" placeholder="Ou saisir une tâche personnalisée..." style="width:100%;margin-top:4px;"/>
+        <input id="nt-ti" placeholder="Ou saisir une tâche personnalisée..." style="width:100%;margin-top:4px;" oninput="clearFieldError('nt-ti')"/>
       </div>
       <div id="nt-detail" style="display:none;">
         <div style="background:var(--hm-light);border-radius:8px;padding:10px;margin-bottom:10px;display:flex;align-items:center;gap:10px;" id="nt-selected-preview"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
           <div><label style="font-size:11px;color:#888;display:block;margin-bottom:4px;">Heures estimées</label>
-          <input id="nt-h" type="number" placeholder="Ex: 2" step="0.5" min="0.5"/></div>
+          <input id="nt-h" type="number" placeholder="Ex: 2" step="0.5" min="0.5" oninput="clearFieldError('nt-h')"/></div>
           <div><label style="font-size:11px;color:#888;display:block;margin-bottom:4px;">Date</label>
           <input id="nt-d" type="date" value="${today()}"/></div>
           <div><label style="font-size:11px;color:#888;display:block;margin-bottom:4px;">Statut</label>
           <select id="nt-st"><option value="en cours">En cours</option><option value="en attente">En attente</option><option value="terminé">Terminé</option></select></div>
         </div>
         <div style="display:flex;gap:7px;">
-          <button onclick="addT()" class="abtn">✅ Enregistrer la tâche</button>
+          <button onclick="addT(this)" class="abtn">✅ Enregistrer la tâche</button>
           <button onclick="resetTaskForm()" class="gbtn">← Changer</button>
         </div>
       </div>
@@ -630,22 +722,27 @@ function resetTaskForm(){
   if(G('nt-ti'))G('nt-ti').value='';
 }
 
-async function addT(){
+async function addT(btn){
+  clearFieldError('nt-cl');clearFieldError('nt-ti');clearFieldError('nt-h');
   const ti=G('nt-ti')?.value.trim();
   const cl=G('nt-cl')?.value;
   const h=parseFloat(G('nt-h')?.value);
-  if(!ti){alert('Choisis ou saisis une tâche !');return;}
-  if(!cl){alert('Choisis un client !');return;}
-  if(!h||h<=0){alert('Indique le nombre d\'heures !');return;}
-  await sb.from('tasks').insert({
-    user_id:me.id,client_id:cl,title:ti,
-    hours:h,date:G('nt-d').value,status:G('nt-st').value
-  });
-  rEmploi();
+  let bad=false;
+  if(!cl){fieldError('nt-cl','Choisis un client.');bad=true;}
+  if(!ti){fieldError('nt-ti','Choisis ou saisis une tâche.');bad=true;}
+  if(!h||h<=0){fieldError('nt-h','Indique un nombre d’heures supérieur à 0.');bad=true;}
+  if(bad)return;
+  try{
+    await withBusy(btn,'Enregistrement…',()=>sb.from('tasks').insert({
+      user_id:me.id,client_id:cl,title:ti,hours:h,date:G('nt-d').value,status:G('nt-st').value
+    }).then(pick));
+    toast('Tâche enregistrée.');
+    render();
+  }catch(e){toast('Enregistrement impossible.','err');}
 }
 
 async function rVocal(){
-  const notes=await sb.from('notes').select('*').eq('user_id',me.id).order('date',{ascending:false}).then(r=>r.data||[]);
+  const notes=await sb.from('notes').select('*').eq('user_id',me.id).order('date',{ascending:false}).then(pick);
   G('cont').innerHTML=`
     <h1 class="stit">Note Vocale</h1>
     <p class="smut">Parle en français ou en turc — traduit automatiquement</p>
@@ -663,7 +760,7 @@ async function rVocal(){
           <div class="tpan"><div class="tlng">${vLang==='fr-FR'?'🇫🇷 Original':'🇹🇷 Orijinal'}</div><div class="ttxt" id="v-ori">${esc(vText)}</div></div>
           <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">${vLang==='fr-FR'?'🇹🇷 Traduction':'🇫🇷 Traduction'}</div><div class="ttxt" id="v-tr">${esc(vTrans)||'Traduction en cours...'}</div></div>
         </div>
-        <div style="display:flex;gap:7px;"><button onclick="saveN()" class="abtn">💾 Enregistrer</button><button onclick="vText='';vTrans='';rVocal();" class="gbtn">Effacer</button></div>
+        <div style="display:flex;gap:7px;"><button onclick="saveN(this)" class="abtn">💾 Enregistrer</button><button onclick="vText='';vTrans='';render();" class="gbtn">Effacer</button></div>
       </div>
     </div>
     <div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:11px;">Notes enregistrées</div>
@@ -675,7 +772,7 @@ async function rVocal(){
       </div></div>`).join(''):'<p style="font-size:13px;color:#aaa;">Aucune note.</p>'}`;
 }
 
-function setVL(l){vLang=l;vText='';vTrans='';rVocal();}
+function setVL(l){vLang=l;vText='';vTrans='';render();}
 
 function startV(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -696,16 +793,19 @@ function startV(){
   rec.start();
 }
 
-async function saveN(){
+async function saveN(btn){
   if(!vText)return;
   const isFR=vLang==='fr-FR';
-  await sb.from('notes').insert({user_id:me.id,fr:isFR?vText:vTrans,tr:isFR?vTrans:vText,date:today()});
-  vText='';vTrans='';rVocal();
+  try{
+    await withBusy(btn,'Enregistrement…',()=>sb.from('notes').insert({user_id:me.id,fr:isFR?vText:vTrans,tr:isFR?vTrans:vText,date:today()}).then(pick));
+    toast('Note enregistrée.');
+    vText='';vTrans='';render();
+  }catch(e){toast('Enregistrement impossible.','err');}
 }
 
 async function rProjets(){
   G('cont').innerHTML=loadSpin();
-  const tasks=await sb.from('tasks').select('*,clients(name,sector,ville)').eq('user_id',me.id).then(r=>r.data||[]);
+  const tasks=await sb.from('tasks').select('*,clients(name,sector,ville)').eq('user_id',me.id).then(pick);
   const clientIds=[...new Set(tasks.map(t=>t.client_id))];
   const groups=clientIds.map(cid=>({
     client:tasks.find(t=>t.client_id===cid)?.clients,
@@ -726,12 +826,23 @@ async function rProjets(){
       </div>`).join('')}
     </div>`).join(''):'<p style="font-size:13px;color:#aaa;">Aucun projet assigné.</p>'}`;
 }
-async function delClient(id){
-  if(me?.role!=='admin'){alert("Seul l'administrateur peut supprimer un client.");return;}
-  if(!confirm("Supprimer ce client ?")) return;
-  await sb.from("tasks").delete().eq("client_id",id);
-  await sb.from("clients").delete().eq("id",id);
-  rClients();
+async function delClient(id,btn){
+  if(me?.role!=='admin'){toast("Seul l'administrateur peut supprimer un client.",'err');return;}
+  const name=clientsCache.find(c=>c.id===id)?.name||'ce client';
+  const ok=await confirmAction({
+    title:'Supprimer le client',
+    message:`Supprimer <b>${esc(name)}</b> et toutes ses tâches ?<br><span style="color:#c0392b;">Cette action est irréversible.</span>`,
+    confirmLabel:'Supprimer',danger:true
+  });
+  if(!ok)return;
+  try{
+    await withBusy(btn,'Suppression…',async()=>{
+      await sb.from('tasks').delete().eq('client_id',id).then(pick);
+      await sb.from('clients').delete().eq('id',id).then(pick);
+    });
+    toast('Client supprimé.');
+    render();
+  }catch(e){toast('Suppression impossible.','err');}
 }
 
 // Au chargement : reprendre une session existante si l'utilisateur est déjà connecté.
