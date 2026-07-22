@@ -150,18 +150,16 @@ async function doLogin(){
   const email=G('li-email').value.trim(),pass=G('li-pass').value;
   G('li-err').style.display='none';
   G('li-btn').innerHTML='<span class="spinner"></span>';
-  const{error}=await sb.auth.signInWithPassword({email,password:pass});
-  if(error){
+  try{
+    const{error}=await sb.auth.signInWithPassword({email,password:pass});
+    if(error){G('li-err').textContent='Email ou mot de passe incorrect';G('li-err').style.display='block';return;}
+    const ok=await loadMeAndEnter();
+    if(!ok){await sb.auth.signOut();G('li-err').textContent="Profil introuvable. Contacte l'administrateur.";G('li-err').style.display='block';}
+  }catch(e){
+    G('li-err').textContent='Connexion impossible (problème réseau ?). Réessaie.';
+    G('li-err').style.display='block';
+  }finally{
     G('li-btn').textContent='Se connecter';
-    G('li-err').textContent='Email ou mot de passe incorrect';
-    G('li-err').style.display='block';
-    return;
-  }
-  const ok=await loadMeAndEnter();
-  G('li-btn').textContent='Se connecter';
-  if(!ok){
-    G('li-err').textContent="Connexion réussie mais profil introuvable. Contacte l'administrateur.";
-    G('li-err').style.display='block';
   }
 }
 
@@ -603,7 +601,7 @@ function selectTask(title){
   showTaskDetail(title);
 }
 
-G('atf') && document.addEventListener('input',e=>{
+document.addEventListener('input',e=>{
   if(e.target.id==='nt-ti'&&e.target.value.trim().length>2) showTaskDetail(e.target.value.trim());
 });
 
