@@ -59,7 +59,7 @@ input,select{border:0.5px solid rgba(60,40,80,0.2);border-radius:8px;padding:8px
 
 /* Emploi du temps */
 .edt-wrap{overflow-x:auto;}
-.edt-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;min-width:700px;}
+.edt-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;min-width:640px;}
 .edt-day{background:#fff;border:0.5px solid rgba(60,40,80,0.12);border-radius:10px;min-height:120px;overflow:hidden;}
 .edt-day.today{border-color:var(--hm-rose);border-width:1.5px;}
 .edt-day-hdr{padding:8px 10px;border-bottom:0.5px solid rgba(60,40,80,0.08);display:flex;align-items:center;justify-content:space-between;}
@@ -67,7 +67,7 @@ input,select{border:0.5px solid rgba(60,40,80,0.2);border-radius:8px;padding:8px
 .edt-day-num{font-size:16px;font-weight:600;color:var(--hm-dark);}
 .edt-day.today .edt-day-num{color:#fff;background:var(--hm-rose);width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;}
 .edt-task{margin:6px 6px 0;padding:5px 8px;border-radius:6px;font-size:11px;background:var(--hm-light);border-left:3px solid var(--hm-rose);color:var(--hm-dark);line-height:1.4;}
-.edt-task.done{border-left-color:#2a7a5a;opacity:0.7;}
+.edt-task.done{border-left-color:#2a7a5a;opacity:0.4;}
 .edt-task.wait{border-left-color:#e67e22;}
 .edt-task-cl{font-size:10px;color:#aaa;margin-top:2px;}
 .edt-empty{padding:12px 10px;font-size:11px;color:#ccc;text-align:center;}
@@ -105,6 +105,29 @@ input.field-bad,select.field-bad{border-color:#c0392b;}
 .seg-btn.on{color:#fff;font-weight:500;border-color:var(--hm-dark);background:var(--hm-dark);}
 .seg-btn.on.s-attente{background:#e67e22;border-color:#e67e22;}
 .seg-btn.on.s-termine{background:#2a7a5a;border-color:#2a7a5a;}
+/* Charge par jour + tâche terminée */
+.edt-charge{padding:5px 10px 0;font-size:10px;color:#888;line-height:1.4;}
+.edt-charge .over{color:#c0392b;font-weight:700;}
+.edt-charge .bloq{color:#e67e22;}
+.edt-charge.libre{color:#c3bcd0;}
+.edt-task.done .et-title{text-decoration:line-through;}
+/* Barre de navigation du bas (mobile) */
+#botnav{display:none;}
+.bnbtn{flex:0 0 auto;background:none;border:none;color:rgba(255,255,255,0.6);font-size:11px;padding:8px 12px;cursor:pointer;border-radius:8px;white-space:nowrap;}
+.bnbtn.active{background:var(--hm-rose);color:#fff;font-weight:500;}
+/* Mobile : colonnes empilées + barre du bas */
+@media (max-width:700px){
+  .sbar{display:none;}
+  .mwrap{display:block;}
+  .cont{padding:16px 14px 78px;}
+  .edt-wrap{overflow-x:visible;}
+  .edt-grid{grid-template-columns:1fr;min-width:0;gap:10px;}
+  .edt-day{min-height:auto;}
+  .hdr{padding:0 12px;}
+  #botnav{display:flex;position:fixed;left:0;right:0;bottom:0;background:var(--hm-dark2);border-top:0.5px solid rgba(255,255,255,0.1);padding:6px 8px;gap:4px;overflow-x:auto;z-index:900;}
+  #toasts{right:12px;left:12px;bottom:88px;align-items:stretch;}
+  .toast{min-width:0;max-width:100%;}
+}
 </style>
 </head>
 <body>
@@ -145,6 +168,7 @@ input.field-bad,select.field-bad{border-color:#c0392b;}
     </div>
     <div class="cont" id="cont"></div>
   </div>
+  <nav id="botnav"></nav>
 </div>
 
 <script>
@@ -156,7 +180,7 @@ let me=null,tab='',cid=null,vLang='fr-FR',vText='',vTrans='',rec=null;
 let weekOffset=0;
 const G=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().split('T')[0];
-const DAYS=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+const DAYS=['Lun','Mar','Mer','Jeu','Ven','Sam'];
 // Échappe le HTML : empêche toute injection de code (XSS) via les données affichées.
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -165,7 +189,7 @@ function getWeekDates(offset=0){
   const day=now.getDay()||7;
   const mon=new Date(now);
   mon.setDate(now.getDate()-day+1+offset*7);
-  return Array.from({length:7},(_,i)=>{
+  return Array.from({length:6},(_,i)=>{
     const d=new Date(mon);d.setDate(mon.getDate()+i);
     return d.toISOString().split('T')[0];
   });
@@ -283,13 +307,14 @@ async function doLogout(){await sb.auth.signOut();me=null;cid=null;weekOffset=0;
 
 function setupNav(){
   const tabs=me.role==='admin'
-    ?[{id:'dashboard',l:'Tableau de bord'},{id:'emploi',l:'Emploi du temps'},{id:'collaborateurs',l:'Collaborateurs'},{id:'clients',l:'Clients'}]
-    :[{id:'emploi',l:'Mon Planning'},{id:'vocal',l:'Note Vocale'},{id:'projets',l:'Mes Projets'}];
+    ?[{id:'dashboard',l:'Tableau de bord',m:'Bord'},{id:'monplanning',l:'Mon Planning',m:'Moi'},{id:'emploi',l:'Emploi du temps',m:'Équipe'},{id:'collaborateurs',l:'Collaborateurs',m:'Collabs'},{id:'clients',l:'Clients',m:'Clients'}]
+    :[{id:'emploi',l:'Mon Planning',m:'Planning'},{id:'vocal',l:'Note Vocale',m:'Vocal'},{id:'projets',l:'Mes Projets',m:'Projets'}];
   G('snav').innerHTML=tabs.map(t=>`<button class="nbtn" id="n-${t.id}" onclick="sw('${t.id}')">${t.l}</button>`).join('');
+  G('botnav').innerHTML=tabs.map(t=>`<button class="bnbtn" id="bn-${t.id}" onclick="sw('${t.id}')">${t.m}</button>`).join('');
 }
 
-function sw(t){cid=null;tab=t;weekOffset=0;document.querySelectorAll('.nbtn').forEach(b=>b.classList.remove('active'));G(`n-${t}`)?.classList.add('active');render();}
-function render(){if(cid!==null){show(rCollab);return;}const fn={dashboard:rDash,emploi:rEmploi,collaborateurs:rCollabs,clients:rClients,vocal:rVocal,projets:rProjets}[tab];if(fn)show(fn);}
+function sw(t){cid=null;tab=t;weekOffset=0;document.querySelectorAll('.nbtn,.bnbtn').forEach(b=>b.classList.remove('active'));G(`n-${t}`)?.classList.add('active');G(`bn-${t}`)?.classList.add('active');render();}
+function render(){if(cid!==null){show(rCollab);return;}const fn={dashboard:rDash,monplanning:rMonPlanning,emploi:rEmploi,collaborateurs:rCollabs,clients:rClients,vocal:rVocal,projets:rProjets}[tab];if(fn)show(fn);}
 
 const bdg=s=>`<span class="badge ${s==='terminé'?'bok':s==='en cours'?'bwip':'bwait'}">${s}</span>`;
 
@@ -299,7 +324,7 @@ const bdg=s=>`<span class="badge ${s==='terminé'?'bok':s==='en cours'?'bwip':'b
 async function rEmploi(){
   G('cont').innerHTML=loadSpin();
   const dates=getWeekDates(weekOffset);
-  const start=dates[0],end=dates[6];
+  const start=dates[0],end=dates[5];
 
   let tasks=[];
   if(me.role==='admin'){
@@ -316,8 +341,14 @@ async function rEmploi(){
   }
 }
 
+async function rMonPlanning(){
+  const dates=getWeekDates(weekOffset);
+  const myTasks=await sb.from('tasks').select('*,clients(name)').eq('user_id',me.id).gte('date',dates[0]).lte('date',dates[5]).then(pick);
+  renderEdtCollab(dates,myTasks);
+}
+
 function weekLabel(dates){
-  return `${fmtDate(dates[0])} — ${fmtDate(dates[6])}`;
+  return `${fmtDate(dates[0])} — ${fmtDate(dates[5])}`;
 }
 
 function navBar(){
@@ -327,6 +358,16 @@ function navBar(){
     <button class="wnbtn" onclick="weekOffset++;render()">Semaine suiv. →</button>
     <span class="week-label" id="wk-lbl"></span>
   </div>`;
+}
+
+function dayCharge(dayTasks){
+  const sum=st=>dayTasks.filter(t=>t.status===st).reduce((s,t)=>s+(+t.hours||0),0);
+  const aFaire=sum('en cours'), bloque=sum('en attente');
+  const fh=n=>Number.isInteger(n)?(''+n):(''+n).replace('.',',');
+  if(aFaire===0&&bloque===0) return `<div class="edt-charge libre">libre</div>`;
+  let s=`<span class="${aFaire>7?'over':''}">${fh(aFaire)} h à faire</span>`;
+  if(bloque>0) s+=` <span class="bloq">· ${fh(bloque)} h bloquées</span>`;
+  return `<div class="edt-charge">${s}</div>`;
 }
 
 function renderEdtCollab(dates,tasks){
@@ -340,16 +381,17 @@ function renderEdtCollab(dates,tasks){
   dates.forEach((d,i)=>{
     const dayTasks=tasks.filter(t=>t.date===d);
     const isToday=d===todayStr;
-    html+=`<div class="edt-day${isToday?' today':''}">
+    html+=`<div class="edt-day${isToday?' today':''}"${isToday?' data-today="1"':''}>
       <div class="edt-day-hdr">
         <span class="edt-day-name">${DAYS[i]}</span>
         <span class="edt-day-num">${isToday?`<div class="edt-day-num">${new Date(d+'T12:00:00').getDate()}</div>`:new Date(d+'T12:00:00').getDate()}</span>
-      </div>`;
+      </div>
+      ${dayCharge(dayTasks)}`;
     if(dayTasks.length){
       dayTasks.forEach(t=>{
         const cls=t.status==='terminé'?'done':t.status==='en attente'?'wait':'';
         html+=`<div class="edt-task ${cls}" style="cursor:pointer;" onclick="openTaskModal('${t.id}')">
-          <div style="font-weight:500;">${esc(t.title)}</div>
+          <div class="et-title" style="font-weight:500;">${esc(t.title)}</div>
           <div class="edt-task-cl">🏢 ${esc(t.clients?.name||'—')} · ⏱ ${t.hours}h</div>
         </div>`;
       });
@@ -364,6 +406,7 @@ function renderEdtCollab(dates,tasks){
 
   G('cont').innerHTML=html;
   G('wk-lbl').textContent=weekLabel(dates);
+  if(window.matchMedia('(max-width:700px)').matches){const el=document.querySelector('.edt-day[data-today]');if(el)el.scrollIntoView({block:'nearest'});}
 }
 
 function renderEdtAdmin(dates,users,allTasks){
