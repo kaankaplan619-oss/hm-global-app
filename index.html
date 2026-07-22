@@ -68,7 +68,7 @@ input,select{border:0.5px solid rgba(60,40,80,0.2);border-radius:8px;padding:8px
 .edt-day.today .edt-day-num{color:#fff;background:var(--hm-rose);width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;}
 .edt-task{margin:6px 6px 0;padding:5px 8px;border-radius:6px;font-size:11px;background:var(--hm-light);border-left:3px solid var(--hm-rose);color:var(--hm-dark);line-height:1.4;}
 .edt-task.done{border-left-color:#2a7a5a;opacity:0.7;}
-.edt-task.wait{border-left-color:#aaa;}
+.edt-task.wait{border-left-color:#e67e22;}
 .edt-task-cl{font-size:10px;color:#aaa;margin-top:2px;}
 .edt-empty{padding:12px 10px;font-size:11px;color:#ccc;text-align:center;}
 .week-nav{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
@@ -87,13 +87,24 @@ input,select{border:0.5px solid rgba(60,40,80,0.2);border-radius:8px;padding:8px
 .toast-x{background:none;border:none;color:rgba(255,255,255,0.85);cursor:pointer;font-size:13px;padding:0 0 0 4px;line-height:1;}
 @keyframes toastin{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
 .modal-ov{position:fixed;inset:0;background:rgba(42,28,58,0.55);display:flex;align-items:center;justify-content:center;z-index:10000;padding:18px;}
-.modal{background:#fff;border-radius:14px;padding:22px;width:360px;max-width:100%;box-shadow:0 18px 50px rgba(42,28,58,0.4);}
+.modal{background:#fff;border-radius:14px;padding:22px;width:360px;max-width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 18px 50px rgba(42,28,58,0.4);}
 .modal-title{font-size:15px;font-weight:600;color:var(--hm-dark);margin-bottom:8px;}
 .modal-msg{font-size:13px;color:#555;line-height:1.5;margin-bottom:18px;}
 .modal-btns{display:flex;gap:8px;justify-content:flex-end;}
 .abtn-danger{background:#c0392b;}.abtn-danger:hover{background:#a93226;}
 .field-err{color:#c0392b;font-size:11px;margin-top:5px;}
 input.field-bad,select.field-bad{border-color:#c0392b;}
+/* Formulaire de tâche (modale) */
+.modal-body{flex:1;overflow-y:auto;margin:2px 0 14px;padding-right:2px;}
+.tf-label{font-size:11px;color:#888;display:block;margin:12px 0 5px;font-weight:500;}
+.tf-label:first-child{margin-top:0;}
+.modal textarea{width:100%;border:0.5px solid rgba(60,40,80,0.2);border-radius:8px;padding:8px 10px;font-size:13px;min-height:56px;font-family:inherit;resize:vertical;outline:none;color:#333;}
+.tf-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.seg{display:flex;gap:6px;}
+.seg-btn{flex:1;padding:9px 4px;border:0.5px solid rgba(60,40,80,0.2);background:#fff;border-radius:8px;cursor:pointer;font-size:12px;color:#666;transition:all .12s;}
+.seg-btn.on{color:#fff;font-weight:500;border-color:var(--hm-dark);background:var(--hm-dark);}
+.seg-btn.on.s-attente{background:#e67e22;border-color:#e67e22;}
+.seg-btn.on.s-termine{background:#2a7a5a;border-color:#2a7a5a;}
 </style>
 </head>
 <body>
@@ -337,7 +348,7 @@ function renderEdtCollab(dates,tasks){
     if(dayTasks.length){
       dayTasks.forEach(t=>{
         const cls=t.status==='terminé'?'done':t.status==='en attente'?'wait':'';
-        html+=`<div class="edt-task ${cls}">
+        html+=`<div class="edt-task ${cls}" style="cursor:pointer;" onclick="openTaskModal('${t.id}')">
           <div style="font-weight:500;">${esc(t.title)}</div>
           <div class="edt-task-cl">🏢 ${esc(t.clients?.name||'—')} · ⏱ ${t.hours}h</div>
         </div>`;
@@ -349,14 +360,10 @@ function renderEdtCollab(dates,tasks){
   });
 
   html+=`</div></div>
-    <div style="margin-top:18px;display:flex;justify-content:space-between;align-items:center;">
-      <div style="font-size:13px;font-weight:500;color:var(--hm-dark);">Ajouter une tâche</div>
-    </div>
-    <div id="atf" style="margin-top:10px;"></div>`;
+    <div style="margin-top:18px;"><button class="abtn" onclick="openTaskModal(null,'${todayStr}')">+ Nouvelle tâche</button></div>`;
 
   G('cont').innerHTML=html;
   G('wk-lbl').textContent=weekLabel(dates);
-  showAddT();
 }
 
 function renderEdtAdmin(dates,users,allTasks){
@@ -623,122 +630,109 @@ async function addC(btn){
   }catch(e){toast("Impossible d'ajouter le client.",'err');}
 }
 
-const TASK_CATS=[
-  {cat:'Impression & Print',icon:'🖨️',tasks:['Carte de visite','Flyer A5','Flyer A4','Affiche A3','Affiche A2','Brochure','Catalogue','Dépliant','Calendrier','Carnet de bons']},
-  {cat:'Signalétique & Pose',icon:'🪟',tasks:['Bâche grand format','Enseigne lumineuse','Lettrage vitrine','Covering véhicule','Panneau extérieur','Roll-up','Kakemono','Totem','Adhésif sol','Pose enseigne']},
-  {cat:'Identité visuelle',icon:'🎨',tasks:['Création logo','Refonte logo','Charte graphique','Déclinaison logo','Mascotte / illustration','Icônes personnalisées','Tampons / cachets','Papier en-tête','Signature email']},
-  {cat:'Web & Digital',icon:'💻',tasks:['Création site web','Refonte site web','Page de vente','Bannière web','Newsletter','Post réseaux sociaux','Story Instagram','Couverture Facebook','Vidéo courte']},
-  {cat:'Documents Pro',icon:'📄',tasks:['Devis graphique','Bon à tirer (BAT)','Contrat prestation','Bon de commande','Facture','Rapport annuel','Présentation PowerPoint','Livret accueil']},
-  {cat:'Photo & Vidéo',icon:'📸',tasks:['Shooting photo','Retouche photos','Montage vidéo','Motion design','Générique vidéo']},
-];
+// ═══════════════════════════════════════
+// FORMULAIRE DE TÂCHE (modale) — créer / modifier
+// ═══════════════════════════════════════
+let taskModalId=null;          // id de la tâche éditée (null = création)
+let taskModalStatus='en cours';
 
-async function showAddT(){
-  let clients=[];
-  try{clients=await sb.from('clients').select('*').order('name').then(pick);}
-  catch(e){if(G('atf'))G('atf').innerHTML='<div class="card" style="font-size:12px;color:#c0392b;">Impossible de charger la liste des clients. <button class="bbtn" style="margin:0;" onclick="showAddT()">Réessayer</button></div>';return;}
-  if(!G('atf'))return;
-  G('atf').innerHTML=`<div class="card">
-    <div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:12px;">Nouvelle tâche</div>
-    <div style="margin-bottom:14px;">
-      <label style="font-size:11px;color:#888;display:block;margin-bottom:5px;">Client concerné</label>
-      <select id="nt-cl" onchange="clearFieldError('nt-cl');loadTaskSugg()" style="width:100%;">
-        <option value="">Choisir un client...</option>
-        ${clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+async function openTaskModal(id,dateISO){
+  taskModalId=id||null;
+  let clients=[],t=null;
+  try{
+    clients=await sb.from('clients').select('*').order('name').then(pick);
+    if(taskModalId){ t=await sb.from('tasks').select('*').eq('id',taskModalId).maybeSingle().then(r=>{if(r.error)throw r.error;return r.data;}); }
+  }catch(e){ toast('Impossible d’ouvrir la tâche.','err'); return; }
+  if(taskModalId&&!t){ toast('Tâche introuvable.','err'); return; }
+
+  taskModalStatus = t?t.status:'en cours';
+  const note = t&&t.note?t.note:'';
+  const dateVal = t?t.date:(dateISO||today());
+  const impVal = t?t.importance:'normale';
+
+  const ov=document.createElement('div');
+  ov.className='modal-ov'; ov.id='task-modal';
+  ov.innerHTML=`<div class="modal" style="width:420px;">
+    <div class="modal-title">${taskModalId?'Modifier la tâche':'Nouvelle tâche'}</div>
+    <div class="modal-body">
+      <label class="tf-label">Que faut-il faire ?</label>
+      <input id="tf-title" placeholder="Ex : Faire le BAT de l'enseigne Naga" value="${esc(t?t.title:'')}" oninput="clearFieldError('tf-title')"/>
+      <label class="tf-label">Client</label>
+      <select id="tf-client">
+        <option value="">— aucun —</option>
+        ${clients.map(c=>`<option value="${c.id}"${t&&t.client_id===c.id?' selected':''}>${esc(c.name)}</option>`).join('')}
       </select>
+      <div class="tf-row">
+        <div><label class="tf-label">Jour</label><input id="tf-date" type="date" value="${esc(dateVal)}"/></div>
+        <div><label class="tf-label">Durée (heures)</label><input id="tf-hours" type="number" step="0.5" min="0.5" placeholder="Ex : 1,5" value="${t?t.hours:''}" oninput="clearFieldError('tf-hours')"/></div>
+      </div>
+      <label class="tf-label">Statut</label>
+      <div class="seg" id="tf-status">
+        <button type="button" class="seg-btn" data-v="en cours" onclick="setTaskStatus('en cours')">En cours</button>
+        <button type="button" class="seg-btn s-attente" data-v="en attente" onclick="setTaskStatus('en attente')">En attente</button>
+        <button type="button" class="seg-btn s-termine" data-v="terminé" onclick="setTaskStatus('terminé')">Terminé</button>
+      </div>
+      <label class="tf-label">Importance</label>
+      <select id="tf-importance">
+        ${['faible','normale','haute','urgente'].map(i=>`<option value="${i}"${impVal===i?' selected':''}>${i.charAt(0).toUpperCase()+i.slice(1)}</option>`).join('')}
+      </select>
+      <label class="tf-label">Note (facultatif)</label>
+      <textarea id="tf-note" placeholder="Détails, mesures, ce qu'on attend…">${esc(note)}</textarea>
     </div>
-    <div id="nt-sugg" style="display:none;">
-      <label style="font-size:11px;color:#888;display:block;margin-bottom:8px;">Choisir le type de prestation</label>
-      <div id="nt-cats" style="margin-bottom:12px;"></div>
-      <div id="nt-tasks-wrap" style="margin-bottom:12px;display:none;">
-        <div id="nt-tasks" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
-        <input id="nt-ti" placeholder="Ou saisir une tâche personnalisée..." style="width:100%;margin-top:4px;" oninput="clearFieldError('nt-ti')"/>
-      </div>
-      <div id="nt-detail" style="display:none;">
-        <div style="background:var(--hm-light);border-radius:8px;padding:10px;margin-bottom:10px;display:flex;align-items:center;gap:10px;" id="nt-selected-preview"></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
-          <div><label style="font-size:11px;color:#888;display:block;margin-bottom:4px;">Heures estimées</label>
-          <input id="nt-h" type="number" placeholder="Ex: 2" step="0.5" min="0.5" oninput="clearFieldError('nt-h')"/></div>
-          <div><label style="font-size:11px;color:#888;display:block;margin-bottom:4px;">Date</label>
-          <input id="nt-d" type="date" value="${today()}"/></div>
-          <div><label style="font-size:11px;color:#888;display:block;margin-bottom:4px;">Statut</label>
-          <select id="nt-st"><option value="en cours">En cours</option><option value="en attente">En attente</option><option value="terminé">Terminé</option></select></div>
-        </div>
-        <div style="display:flex;gap:7px;">
-          <button onclick="addT(this)" class="abtn">✅ Enregistrer la tâche</button>
-          <button onclick="resetTaskForm()" class="gbtn">← Changer</button>
-        </div>
-      </div>
+    <div class="modal-btns">
+      ${taskModalId?`<button class="gbtn" style="margin-right:auto;color:#c0392b;border-color:rgba(192,57,43,0.4);" onclick="deleteTaskFromModal(this)">Supprimer</button>`:''}
+      <button class="gbtn" onclick="closeTaskModal()">Annuler</button>
+      <button class="abtn" onclick="saveTask(this)">Enregistrer</button>
     </div>
   </div>`;
+  ov.addEventListener('click',e=>{ if(e.target===ov) closeTaskModal(); });
+  document.body.appendChild(ov);
+  setTaskStatus(taskModalStatus);
 }
 
-function loadTaskSugg(){
-  const cl=G('nt-cl').value;
-  if(!cl)return;
-  G('nt-sugg').style.display='block';
-  G('nt-cats').innerHTML=TASK_CATS.map((c,i)=>
-    `<button onclick="selectCat(${i})" style="display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border-radius:20px;border:0.5px solid rgba(60,40,80,0.15);background:transparent;cursor:pointer;font-size:12px;color:var(--hm-dark);margin:0 5px 5px 0;transition:all .15s;" onmouseover="this.style.background='var(--hm-dark)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--hm-dark)'">
-      <span style="font-size:14px;">${c.icon}</span>${c.cat}
-    </button>`
-  ).join('');
-  G('nt-tasks-wrap').style.display='none';
-  G('nt-detail').style.display='none';
+function setTaskStatus(s){
+  taskModalStatus=s;
+  document.querySelectorAll('#tf-status .seg-btn').forEach(b=>b.classList.toggle('on', b.dataset.v===s));
 }
 
-function selectCat(idx){
-  const cat=TASK_CATS[idx];
-  G('nt-tasks-wrap').style.display='block';
-  G('nt-tasks').innerHTML=cat.tasks.map(t=>
-    `<button onclick="selectTask('${t.replace(/'/g,"\\'")}')" style="padding:5px 11px;border-radius:20px;border:0.5px solid rgba(184,52,104,0.3);background:#fdf0f5;cursor:pointer;font-size:12px;color:var(--hm-rose);transition:all .15s;" onmouseover="this.style.background='var(--hm-rose)';this.style.color='#fff'" onmouseout="this.style.background='#fdf0f5';this.style.color='var(--hm-rose)'">${t}</button>`
-  ).join('');
-  G('nt-ti').value='';
-  G('nt-detail').style.display='none';
-}
+function closeTaskModal(){ const m=G('task-modal'); if(m)m.remove(); }
 
-function selectTask(title){
-  G('nt-ti').value=title;
-  showTaskDetail(title);
-}
-
-document.addEventListener('input',e=>{
-  if(e.target.id==='nt-ti'&&e.target.value.trim().length>2) showTaskDetail(e.target.value.trim());
-});
-
-function showTaskDetail(title){
-  if(!title||!G('nt-detail'))return;
-  G('nt-detail').style.display='block';
-  const cl=G('nt-cl');
-  const clientName=cl?.options[cl.selectedIndex]?.text||'';
-  G('nt-selected-preview').innerHTML=`
-    <div style="width:36px;height:36px;border-radius:8px;background:var(--hm-rose);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;flex-shrink:0;">✏️</div>
-    <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);">${esc(title)}</div>
-    <div style="font-size:11px;color:#aaa;">Pour : ${esc(clientName)}</div></div>
-    <button onclick="resetTaskForm()" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:18px;color:#ccc;">✕</button>`;
-}
-
-function resetTaskForm(){
-  if(G('nt-detail'))G('nt-detail').style.display='none';
-  if(G('nt-tasks-wrap'))G('nt-tasks-wrap').style.display='none';
-  if(G('nt-ti'))G('nt-ti').value='';
-}
-
-async function addT(btn){
-  clearFieldError('nt-cl');clearFieldError('nt-ti');clearFieldError('nt-h');
-  const ti=G('nt-ti')?.value.trim();
-  const cl=G('nt-cl')?.value;
-  const h=parseFloat(G('nt-h')?.value);
+async function saveTask(btn){
+  clearFieldError('tf-title'); clearFieldError('tf-hours');
+  const title=G('tf-title').value.trim();
+  const h=parseFloat(G('tf-hours').value);
   let bad=false;
-  if(!cl){fieldError('nt-cl','Choisis un client.');bad=true;}
-  if(!ti){fieldError('nt-ti','Choisis ou saisis une tâche.');bad=true;}
-  if(!h||h<=0){fieldError('nt-h','Indique un nombre d’heures supérieur à 0.');bad=true;}
+  if(!title){fieldError('tf-title','Indique ce qu’il faut faire.');bad=true;}
+  if(!h||h<=0){fieldError('tf-hours','Indique une durée supérieure à 0.');bad=true;}
   if(bad)return;
+  const row={
+    user_id:me.id, client_id:G('tf-client').value||null,
+    title, hours:h, date:G('tf-date').value,
+    status:taskModalStatus, importance:G('tf-importance').value,
+    note:G('tf-note').value.trim()||null
+  };
   try{
-    await withBusy(btn,'Enregistrement…',()=>sb.from('tasks').insert({
-      user_id:me.id,client_id:cl,title:ti,hours:h,date:G('nt-d').value,status:G('nt-st').value
-    }).then(pick));
-    toast('Tâche enregistrée.');
+    if(taskModalId){
+      await withBusy(btn,'Enregistrement…',()=>sb.from('tasks').update(row).eq('id',taskModalId).then(pick));
+    }else{
+      await withBusy(btn,'Enregistrement…',()=>sb.from('tasks').insert(row).then(pick));
+    }
+    closeTaskModal();
+    toast(taskModalId?'Tâche modifiée.':'Tâche enregistrée.');
     render();
-  }catch(e){toast('Enregistrement impossible.','err');}
+  }catch(e){ toast('Enregistrement impossible.','err'); }
+}
+
+async function deleteTaskFromModal(btn){
+  const title=G('tf-title').value.trim()||'cette tâche';
+  const ok=await confirmAction({title:'Supprimer la tâche',message:`Supprimer <b>${esc(title)}</b> ?<br><span style="color:#c0392b;">Cette action est irréversible.</span>`,confirmLabel:'Supprimer',danger:true});
+  if(!ok)return;
+  try{
+    await withBusy(btn,'Suppression…',()=>sb.from('tasks').delete().eq('id',taskModalId).then(pick));
+    closeTaskModal();
+    toast('Tâche supprimée.');
+    render();
+  }catch(e){ toast('Suppression impossible.','err'); }
 }
 
 async function rVocal(){
