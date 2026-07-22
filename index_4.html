@@ -130,6 +130,8 @@ let weekOffset=0;
 const G=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().split('T')[0];
 const DAYS=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+// Échappe le HTML : empêche toute injection de code (XSS) via les données affichées.
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 function getWeekDates(offset=0){
   const now=new Date();
@@ -250,8 +252,8 @@ function renderEdtCollab(dates,tasks){
       dayTasks.forEach(t=>{
         const cls=t.status==='terminé'?'done':t.status==='en attente'?'wait':'';
         html+=`<div class="edt-task ${cls}">
-          <div style="font-weight:500;">${t.title}</div>
-          <div class="edt-task-cl">🏢 ${t.clients?.name||'—'} · ⏱ ${t.hours}h</div>
+          <div style="font-weight:500;">${esc(t.title)}</div>
+          <div class="edt-task-cl">🏢 ${esc(t.clients?.name||'—')} · ⏱ ${t.hours}h</div>
         </div>`;
       });
     } else {
@@ -282,8 +284,8 @@ function renderEdtAdmin(dates,users,allTasks){
     const totalH=userTasks.reduce((s,t)=>s+(t.hours||0),0).toFixed(1);
     html+=`<div style="margin-bottom:24px;">
       <div class="edt-collab-hdr">
-        <div class="avlg" style="width:38px;height:38px;font-size:13px;">${u.name.slice(0,2).toUpperCase()}</div>
-        <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${u.name}</div>
+        <div class="avlg" style="width:38px;height:38px;font-size:13px;">${esc(u.name.slice(0,2).toUpperCase())}</div>
+        <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${esc(u.name)}</div>
         <div style="font-size:11px;color:#999;">${userTasks.length} tâche(s) · ${totalH}h cette semaine</div></div>
       </div>
       <div class="edt-wrap"><div class="edt-grid">`;
@@ -300,7 +302,7 @@ function renderEdtAdmin(dates,users,allTasks){
         dayTasks.forEach(t=>{
           const cls=t.status==='terminé'?'done':t.status==='en attente'?'wait':'';
           html+=`<div class="edt-task ${cls}">
-            <div style="font-weight:500;">${t.title}</div>
+            <div style="font-weight:500;">${esc(t.title)}</div>
             <div class="edt-task-cl">⏱ ${t.hours}h · ${bdg(t.status)}</div>
           </div>`;
         });
@@ -329,7 +331,7 @@ async function rDash(){
   const ec=tasks.filter(t=>t.status==='en cours').length;
   const th=tasks.reduce((s,t)=>s+(t.hours||0),0).toFixed(0);
   G('cont').innerHTML=`
-    <h1 class="stit">Bonjour, ${me.name} 👋</h1>
+    <h1 class="stit">Bonjour, ${esc(me.name)} 👋</h1>
     <p class="smut">${new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>
     <div class="g4" style="margin-bottom:22px;">
       ${[{i:'📋',v:tasks.length,l:'Tâches',c:'var(--hm-dark)'},{i:'⏱',v:th+'h',l:'Heures',c:'var(--hm-rose)'},{i:'🏢',v:clients.length,l:'Clients',c:'var(--hm-blue)'},{i:'🔄',v:ec,l:'En cours',c:'var(--hm-purple)'}]
@@ -342,8 +344,8 @@ async function rDash(){
         const h=ct.reduce((s,t)=>s+(t.hours||0),0).toFixed(1);
         return`<div class="card chov" onclick="viewC('${c.id}')">
           <div style="display:flex;align-items:center;gap:11px;margin-bottom:13px;">
-            <div class="avlg">${c.name.slice(0,2).toUpperCase()}</div>
-            <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${c.name}</div><div style="font-size:11px;color:#999;">Collaborateur senior</div></div>
+            <div class="avlg">${esc(c.name.slice(0,2).toUpperCase())}</div>
+            <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${esc(c.name)}</div><div style="font-size:11px;color:#999;">Collaborateur senior</div></div>
           </div>
           <div class="g3">
             ${[{l:'Tâches',v:ct.length,c:'var(--hm-dark)'},{l:'Heures',v:h+'h',c:'var(--hm-rose)'},{l:'En cours',v:ct.filter(t=>t.status==='en cours').length,c:'var(--hm-blue)'}]
@@ -366,8 +368,8 @@ async function rCollabs(){
       const ct=tasks.filter(t=>t.user_id===c.id);
       const h=ct.reduce((s,t)=>s+(t.hours||0),0).toFixed(1);
       return`<div class="card chov" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;" onclick="viewC('${c.id}')">
-        <div style="display:flex;align-items:center;gap:13px;"><div class="avlg">${c.name.slice(0,2).toUpperCase()}</div>
-        <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${c.name}</div><div style="font-size:12px;color:#999;">${c.email}</div></div></div>
+        <div style="display:flex;align-items:center;gap:13px;"><div class="avlg">${esc(c.name.slice(0,2).toUpperCase())}</div>
+        <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${esc(c.name)}</div><div style="font-size:12px;color:#999;">${esc(c.email)}</div></div></div>
         <div style="display:flex;gap:18px;align-items:center;">
           <div style="text-align:center;"><div style="font-size:17px;font-weight:500;color:var(--hm-rose);">${ct.length}</div><div style="font-size:10px;color:#999;">tâches</div></div>
           <div style="text-align:center;"><div style="font-size:17px;font-weight:500;color:var(--hm-blue);">${h}h</div><div style="font-size:10px;color:#999;">heures</div></div>
@@ -389,9 +391,9 @@ async function rCollab(){
   G('cont').innerHTML=`
     <button class="bbtn" onclick="cid=null;render();">← Retour</button>
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:22px;padding:16px;background:#fff;border-radius:12px;border:0.5px solid rgba(60,40,80,0.1);">
-      <div class="avlg" style="width:52px;height:52px;">${c.name.slice(0,2).toUpperCase()}</div>
-      <div style="flex:1;"><div style="font-size:18px;font-weight:500;color:var(--hm-dark);">${c.name}</div>
-      <div style="font-size:12px;color:#999;margin-bottom:8px;">Collaborateur senior · ${c.email}</div>
+      <div class="avlg" style="width:52px;height:52px;">${esc(c.name.slice(0,2).toUpperCase())}</div>
+      <div style="flex:1;"><div style="font-size:18px;font-weight:500;color:var(--hm-dark);">${esc(c.name)}</div>
+      <div style="font-size:12px;color:#999;margin-bottom:8px;">Collaborateur senior · ${esc(c.email)}</div>
       <div class="stat-bar" style="width:${Math.min(100,parseFloat(h)/20*100)}%;"></div></div>
     </div>
     <div class="g3" style="margin-bottom:22px;">
@@ -400,15 +402,15 @@ async function rCollab(){
     </div>
     <div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:10px;">Tâches</div>
     ${tasks.length?tasks.map(t=>`<div class="card" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:2px;">${t.title}</div>
-      <div style="font-size:11px;color:#999;">🏢 ${t.clients?.name||'—'} · 📅 ${t.date} · ⏱ ${t.hours}h</div></div>
+      <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:2px;">${esc(t.title)}</div>
+      <div style="font-size:11px;color:#999;">🏢 ${esc(t.clients?.name||'—')} · 📅 ${esc(t.date)} · ⏱ ${t.hours}h</div></div>
       ${bdg(t.status)}</div>`).join(''):'<p style="font-size:13px;color:#999;margin-bottom:16px;">Aucune tâche.</p>'}
     <div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin:18px 0 10px;">Notes vocales</div>
     ${notes.length?notes.map(n=>`<div class="card" style="margin-bottom:9px;">
-      <div style="font-size:11px;color:#999;margin-bottom:9px;">📅 ${n.date}</div>
+      <div style="font-size:11px;color:#999;margin-bottom:9px;">📅 ${esc(n.date)}</div>
       <div class="tbox">
-        <div class="tpan"><div class="tlng">🇫🇷 Français</div><div class="ttxt">${n.fr||''}</div></div>
-        <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">🇹🇷 Türkçe</div><div class="ttxt">${n.tr||''}</div></div>
+        <div class="tpan"><div class="tlng">🇫🇷 Français</div><div class="ttxt">${esc(n.fr)}</div></div>
+        <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">🇹🇷 Türkçe</div><div class="ttxt">${esc(n.tr)}</div></div>
       </div></div>`).join(''):'<p style="font-size:13px;color:#999;">Aucune note vocale.</p>'}`;
 }
 
@@ -429,9 +431,9 @@ async function rClients(){
       ${clients.map((c,i)=>`<div class="card">
         <div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;">
           <div style="width:36px;height:36px;border-radius:9px;background:var(--hm-light);display:flex;align-items:center;justify-content:center;font-size:17px;">${ic[i%ic.length]}</div>
-          <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);">${c.name}</div><div style="font-size:11px;color:#999;">${c.sector||''}</div></div>
+          <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);">${esc(c.name)}</div><div style="font-size:11px;color:#999;">${esc(c.sector)}</div></div>
         </div>
-        <div style="font-size:11px;color:#aaa;">📍 ${c.ville||''}</div>
+        <div style="font-size:11px;color:#aaa;">📍 ${esc(c.ville)}</div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;"><span style="font-size:12px;color:var(--hm-rose);">${tasks.filter(t=>t.client_id===c.id).length} tâche(s)</span>${me.role==='admin'?`<button onclick="delClient('${c.id}')" style="background:none;border:none;cursor:pointer;font-size:16px;color:#ccc;" title="Supprimer">🗑️</button>`:''}</div>
       </div>`).join('')}
     </div>`;
@@ -466,7 +468,7 @@ function showAddC(){
   </div>`;
 }
 
-let sirenTimer=null;
+let sirenTimer=null,sirenResults=[];
 function searchSiren(val){
   clearTimeout(sirenTimer);
   G('nc-results').innerHTML='';
@@ -478,18 +480,23 @@ function searchSiren(val){
       const r=await fetch(url);
       const d=await r.json();
       G('nc-spin').style.display='none';
-      if(!d.results||!d.results.length){G('nc-results').innerHTML='<p style="font-size:11px;color:#aaa;margin-top:4px;">Aucun résultat trouvé</p>';return;}
-      G('nc-results').innerHTML=d.results.map(e=>{
+      sirenResults=d.results||[];
+      if(!sirenResults.length){G('nc-results').innerHTML='<p style="font-size:11px;color:#aaa;margin-top:4px;">Aucun résultat trouvé</p>';return;}
+      G('nc-results').innerHTML=sirenResults.map((e,i)=>{
         const nom=e.nom_complet||e.nom_raison_sociale||'—';
         const siren=e.siren||'';
         const ville=e.siege?.libelle_commune||'';
         const cp=e.siege?.code_postal||'';
         const activite=e.activite_principale_libelle||e.section_activite_principale||'';
-        return`<div onclick="selectEntreprise('${nom.replace(/'/g,"\\'")}','${siren}','${ville}','${cp}','${activite.replace(/'/g,"\\'")}','${(e.siege?.code_naf||'').replace(/'/g,"\\'")}' )" style="padding:8px 10px;border-radius:7px;background:var(--hm-light);cursor:pointer;margin-bottom:5px;border:0.5px solid rgba(60,40,80,0.1);transition:border-color .15s;" onmouseover="this.style.borderColor='var(--hm-rose)'" onmouseout="this.style.borderColor='rgba(60,40,80,0.1)'">
-          <div style="font-size:12px;font-weight:500;color:var(--hm-dark);">${nom}</div>
-          <div style="font-size:10px;color:#aaa;margin-top:2px;">SIREN ${siren} · ${cp} ${ville} · ${activite.slice(0,40)}</div>
+        return`<div data-siren="${i}" style="padding:8px 10px;border-radius:7px;background:var(--hm-light);cursor:pointer;margin-bottom:5px;border:0.5px solid rgba(60,40,80,0.1);transition:border-color .15s;" onmouseover="this.style.borderColor='var(--hm-rose)'" onmouseout="this.style.borderColor='rgba(60,40,80,0.1)'">
+          <div style="font-size:12px;font-weight:500;color:var(--hm-dark);">${esc(nom)}</div>
+          <div style="font-size:10px;color:#aaa;margin-top:2px;">SIREN ${esc(siren)} · ${esc(cp)} ${esc(ville)} · ${esc(activite.slice(0,40))}</div>
         </div>`;
       }).join('');
+      G('nc-results').querySelectorAll('[data-siren]').forEach(el=>el.addEventListener('click',()=>{
+        const e=sirenResults[+el.dataset.siren];if(!e)return;
+        selectEntreprise(e.nom_complet||e.nom_raison_sociale||'—',e.siren||'',e.siege?.libelle_commune||'',e.siege?.code_postal||'',e.activite_principale_libelle||e.section_activite_principale||'',e.siege?.code_naf||'');
+      }));
     }catch(e){G('nc-spin').style.display='none';G('nc-results').innerHTML='<p style="font-size:11px;color:#c0392b;">Erreur de connexion à l\'API</p>';}
   },400);
 }
@@ -502,9 +509,9 @@ function selectEntreprise(nom,siren,ville,cp,activite,naf){
   G('nc-v').value=ville||'';
   G('nc-siren').value=siren;
   G('nc-preview').innerHTML=`<div style="display:flex;align-items:center;gap:8px;">
-    <div style="width:32px;height:32px;border-radius:7px;background:var(--hm-dark);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;">${nom.slice(0,2).toUpperCase()}</div>
-    <div><div style="font-size:12px;font-weight:500;color:var(--hm-dark);">${nom}</div>
-    <div style="font-size:10px;color:#888;">SIREN ${siren} · ${cp} ${ville}</div></div>
+    <div style="width:32px;height:32px;border-radius:7px;background:var(--hm-dark);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;">${esc(nom.slice(0,2).toUpperCase())}</div>
+    <div><div style="font-size:12px;font-weight:500;color:var(--hm-dark);">${esc(nom)}</div>
+    <div style="font-size:10px;color:#888;">SIREN ${esc(siren)} · ${esc(cp)} ${esc(ville)}</div></div>
     <span style="margin-left:auto;font-size:10px;background:#e8f5f0;color:#2a7a5a;padding:2px 7px;border-radius:20px;">Vérifié</span>
   </div>`;
 }
@@ -544,7 +551,7 @@ async function showAddT(){
       <label style="font-size:11px;color:#888;display:block;margin-bottom:5px;">Client concerné</label>
       <select id="nt-cl" onchange="loadTaskSugg()" style="width:100%;">
         <option value="">Choisir un client...</option>
-        ${clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}
+        ${clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}
       </select>
     </div>
     <div id="nt-sugg" style="display:none;">
@@ -612,8 +619,8 @@ function showTaskDetail(title){
   const clientName=cl?.options[cl.selectedIndex]?.text||'';
   G('nt-selected-preview').innerHTML=`
     <div style="width:36px;height:36px;border-radius:8px;background:var(--hm-rose);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;flex-shrink:0;">✏️</div>
-    <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);">${title}</div>
-    <div style="font-size:11px;color:#aaa;">Pour : ${clientName}</div></div>
+    <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);">${esc(title)}</div>
+    <div style="font-size:11px;color:#aaa;">Pour : ${esc(clientName)}</div></div>
     <button onclick="resetTaskForm()" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:18px;color:#ccc;">✕</button>`;
 }
 
@@ -653,18 +660,18 @@ async function rVocal(){
       </div>
       <div id="vr" style="display:${vText?'block':'none'};">
         <div class="tbox" style="margin-bottom:12px;">
-          <div class="tpan"><div class="tlng">${vLang==='fr-FR'?'🇫🇷 Original':'🇹🇷 Orijinal'}</div><div class="ttxt" id="v-ori">${vText}</div></div>
-          <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">${vLang==='fr-FR'?'🇹🇷 Traduction':'🇫🇷 Traduction'}</div><div class="ttxt" id="v-tr">${vTrans||'Traduction en cours...'}</div></div>
+          <div class="tpan"><div class="tlng">${vLang==='fr-FR'?'🇫🇷 Original':'🇹🇷 Orijinal'}</div><div class="ttxt" id="v-ori">${esc(vText)}</div></div>
+          <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">${vLang==='fr-FR'?'🇹🇷 Traduction':'🇫🇷 Traduction'}</div><div class="ttxt" id="v-tr">${esc(vTrans)||'Traduction en cours...'}</div></div>
         </div>
         <div style="display:flex;gap:7px;"><button onclick="saveN()" class="abtn">💾 Enregistrer</button><button onclick="vText='';vTrans='';rVocal();" class="gbtn">Effacer</button></div>
       </div>
     </div>
     <div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:11px;">Notes enregistrées</div>
     ${notes.length?notes.map(n=>`<div class="card" style="margin-bottom:9px;">
-      <div style="font-size:11px;color:#999;margin-bottom:9px;">📅 ${n.date}</div>
+      <div style="font-size:11px;color:#999;margin-bottom:9px;">📅 ${esc(n.date)}</div>
       <div class="tbox">
-        <div class="tpan"><div class="tlng">🇫🇷 Français</div><div class="ttxt">${n.fr||''}</div></div>
-        <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">🇹🇷 Türkçe</div><div class="ttxt">${n.tr||''}</div></div>
+        <div class="tpan"><div class="tlng">🇫🇷 Français</div><div class="ttxt">${esc(n.fr)}</div></div>
+        <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">🇹🇷 Türkçe</div><div class="ttxt">${esc(n.tr)}</div></div>
       </div></div>`).join(''):'<p style="font-size:13px;color:#aaa;">Aucune note.</p>'}`;
 }
 
@@ -708,13 +715,13 @@ async function rProjets(){
   G('cont').innerHTML=`<h1 class="stit">Mes Projets</h1>
     ${groups.length?groups.map(g=>`<div class="card" style="margin-bottom:13px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-        <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${g.client?.name||'—'}</div>
-        <div style="font-size:11px;color:#999;">${g.client?.sector||''} · ${g.client?.ville||''}</div></div>
+        <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${esc(g.client?.name||'—')}</div>
+        <div style="font-size:11px;color:#999;">${esc(g.client?.sector)} · ${esc(g.client?.ville)}</div></div>
         <div style="text-align:right;"><div style="font-size:16px;font-weight:500;color:var(--hm-rose);">${g.h}h</div><div style="font-size:10px;color:#999;">total</div></div>
       </div>
       <div class="stat-bar" style="margin-bottom:11px;width:${Math.min(100,parseFloat(g.h)/10*100)}%;"></div>
       ${g.tasks.map(t=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--hm-light);border-radius:7px;margin-bottom:5px;">
-        <span style="font-size:12px;color:var(--hm-dark);">${t.title}</span>
+        <span style="font-size:12px;color:var(--hm-dark);">${esc(t.title)}</span>
         <div style="display:flex;gap:7px;align-items:center;"><span style="font-size:11px;color:#aaa;">${t.hours}h</span>${bdg(t.status)}</div>
       </div>`).join('')}
     </div>`).join(''):'<p style="font-size:13px;color:#aaa;">Aucun projet assigné.</p>'}`;
