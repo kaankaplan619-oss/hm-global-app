@@ -4,13 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HM Global — Espace Interne</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">async function delClient(id){
-  if(!confirm("Supprimer ce client ?")) return;
-  await sb.from("tasks").delete().eq("client_id",id);
-  await sb.from("clients").delete().eq("id",id);
-  rClients();
-}
-</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--hm-dark:#3c2850;--hm-rose:#b83468;--hm-blue:#4a9ec5;--hm-purple:#6a2a8a;--hm-dark2:#2a1c3a;--hm-light:#f5f0f8;}
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
@@ -127,8 +121,8 @@ input,select{border:0.5px solid rgba(60,40,80,0.2);border-radius:8px;padding:8px
 </div>
 
 <script>
-const SUPA_URL='https://nvufbzepicxubxdxutph.supabase.co';
-const SUPA_KEY='sb_publishable_aN_ivcfpLzujhkoblpNB0w_GapMeD0V';
+const SUPA_URL='https://hxawzmtclzckdalrokvm.supabase.co';
+const SUPA_KEY='sb_publishable_266IbTf1YpguIC0spx5eaA_I4hAPQRY';
 const sb=supabase.createClient(SUPA_URL,SUPA_KEY);
 
 let me=null,tab='',cid=null,vLang='fr-FR',vText='',vTrans='',rec=null;
@@ -156,18 +150,39 @@ async function doLogin(){
   const email=G('li-email').value.trim(),pass=G('li-pass').value;
   G('li-err').style.display='none';
   G('li-btn').innerHTML='<span class="spinner"></span>';
-  const{data}=await sb.from('users').select('*').eq('email',email).eq('password',pass);
+  const{error}=await sb.auth.signInWithPassword({email,password:pass});
+  if(error){
+    G('li-btn').textContent='Se connecter';
+    G('li-err').textContent='Email ou mot de passe incorrect';
+    G('li-err').style.display='block';
+    return;
+  }
+  const ok=await loadMeAndEnter();
   G('li-btn').textContent='Se connecter';
-  if(!data||!data.length){G('li-err').textContent='Email ou mot de passe incorrect';G('li-err').style.display='block';return;}
-  me=data[0];
+  if(!ok){
+    G('li-err').textContent="Connexion réussie mais profil introuvable. Contacte l'administrateur.";
+    G('li-err').style.display='block';
+  }
+}
+
+// Charge le profil de l'utilisateur connecté puis ouvre l'application.
+// Appelée après une connexion réussie ET au chargement si une session existe déjà.
+async function loadMeAndEnter(){
+  const{data:{user}}=await sb.auth.getUser();
+  if(!user)return false;
+  const{data:prof}=await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();
+  if(!prof)return false;
+  me={...prof,email:prof.email||user.email};
+  G('li-pass').value='';
   G('login').classList.remove('active');G('app').classList.add('active');
-  G('hd-av').textContent=me.name.slice(0,2).toUpperCase();
+  G('hd-av').textContent=(me.name||'?').slice(0,2).toUpperCase();
   G('hd-nm').textContent=me.name;G('sb-nm').textContent=me.name;
   G('sb-rl').textContent=me.role==='admin'?'Directeur':'Collaborateur senior';
   setupNav();sw(me.role==='admin'?'dashboard':'emploi');
+  return true;
 }
 
-function doLogout(){me=null;cid=null;weekOffset=0;G('app').classList.remove('active');G('login').classList.add('active');}
+async function doLogout(){await sb.auth.signOut();me=null;cid=null;weekOffset=0;G('app').classList.remove('active');G('login').classList.add('active');}
 
 function setupNav(){
   const tabs=me.role==='admin'
@@ -193,8 +208,8 @@ async function rEmploi(){
   if(me.role==='admin'){
     // Admin voit tous les collabs
     const[users,allTasks]=await Promise.all([
-      sb.from('users').select('*').eq('role','collab').then(r=>r.data||[]),
-      sb.from('tasks').select('*,users(name),clients(name)').gte('date',start).lte('date',end).then(r=>r.data||[])
+      sb.from('profiles').select('*').eq('role','collab').then(r=>r.data||[]),
+      sb.from('tasks').select('*,profiles(name),clients(name)').gte('date',start).lte('date',end).then(r=>r.data||[])
     ]);
     renderEdtAdmin(dates,users,allTasks);
   } else {
@@ -309,7 +324,7 @@ function renderEdtAdmin(dates,users,allTasks){
 async function rDash(){
   G('cont').innerHTML=loadSpin();
   const[users,tasks,clients]=await Promise.all([
-    sb.from('users').select('*').eq('role','collab').then(r=>r.data||[]),
+    sb.from('profiles').select('*').eq('role','collab').then(r=>r.data||[]),
     sb.from('tasks').select('*').then(r=>r.data||[]),
     sb.from('clients').select('*').then(r=>r.data||[])
   ]);
@@ -345,7 +360,7 @@ async function rDash(){
 async function rCollabs(){
   G('cont').innerHTML=loadSpin();
   const[users,tasks]=await Promise.all([
-    sb.from('users').select('*').eq('role','collab').then(r=>r.data||[]),
+    sb.from('profiles').select('*').eq('role','collab').then(r=>r.data||[]),
     sb.from('tasks').select('*').then(r=>r.data||[])
   ]);
   G('cont').innerHTML=`<h1 class="stit">Collaborateurs</h1>
@@ -368,7 +383,7 @@ async function viewC(uid){cid=uid;rCollab();}
 async function rCollab(){
   G('cont').innerHTML=loadSpin();
   const[uRes,tasks,notes]=await Promise.all([
-    sb.from('users').select('*').eq('id',cid).then(r=>r.data?.[0]),
+    sb.from('profiles').select('*').eq('id',cid).then(r=>r.data?.[0]),
     sb.from('tasks').select('*,clients(name)').eq('user_id',cid).order('date',{ascending:false}).then(r=>r.data||[]),
     sb.from('notes').select('*').eq('user_id',cid).order('date',{ascending:false}).then(r=>r.data||[])
   ]);
@@ -419,7 +434,7 @@ async function rClients(){
           <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);">${c.name}</div><div style="font-size:11px;color:#999;">${c.sector||''}</div></div>
         </div>
         <div style="font-size:11px;color:#aaa;">📍 ${c.ville||''}</div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;"><span style="font-size:12px;color:var(--hm-rose);">${tasks.filter(t=>t.client_id===c.id).length} tâche(s)</span><button onclick="delClient('${c.id}')" style="background:none;border:none;cursor:pointer;font-size:16px;color:#ccc;" title="Supprimer">🗑️</button></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;"><span style="font-size:12px;color:var(--hm-rose);">${tasks.filter(t=>t.client_id===c.id).length} tâche(s)</span>${me.role==='admin'?`<button onclick="delClient('${c.id}')" style="background:none;border:none;cursor:pointer;font-size:16px;color:#ccc;" title="Supprimer">🗑️</button>`:''}</div>
       </div>`).join('')}
     </div>`;
 }
@@ -707,11 +722,15 @@ async function rProjets(){
     </div>`).join(''):'<p style="font-size:13px;color:#aaa;">Aucun projet assigné.</p>'}`;
 }
 async function delClient(id){
+  if(me?.role!=='admin'){alert("Seul l'administrateur peut supprimer un client.");return;}
   if(!confirm("Supprimer ce client ?")) return;
   await sb.from("tasks").delete().eq("client_id",id);
   await sb.from("clients").delete().eq("id",id);
   rClients();
 }
+
+// Au chargement : reprendre une session existante si l'utilisateur est déjà connecté.
+(async()=>{ try{ const{data:{session}}=await sb.auth.getSession(); if(session) await loadMeAndEnter(); }catch(e){} })();
 </script>
 </body>
 </html>
