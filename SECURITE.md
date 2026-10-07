@@ -35,6 +35,11 @@ ont été mises à jour. La session est conservée au rechargement de la page.
 
 Rien n'a été appliqué au projet Supabase ni déployé.
 
+> Le dépôt est relié à Vercel : fusionner cette branche dans `main` déploie les
+> nouvelles pages en production. **Ne pas fusionner avant l'étape 2** (les
+> nouvelles pages ne peuvent se connecter qu'une fois les profils créés), puis
+> fusionner juste après.
+
 0. **Sauvegarde** : Database > Backups dans le tableau de bord Supabase (ou
    `pg_dump`).
 1. **Désactiver les inscriptions publiques** : Authentication > Sign In /
@@ -57,8 +62,9 @@ Rien n'a été appliqué au projet Supabase ni déployé.
      e-mail que dans `users`, cocher *Auto Confirm User*.
 4. **Étape 2 + déploiement** : exécuter
    `supabase/migrations/20261007120100_link_profiles_enable_rls.sql` (le fichier
-   entier, d'un bloc), **puis déployer aussitôt les nouvelles pages** : à partir
-   de cette étape, les anciennes pages ne peuvent plus se connecter.
+   entier, d'un bloc), **puis déployer aussitôt les nouvelles pages** (fusion
+   dans `main`, Vercel déploie) : à partir de cette étape, les anciennes pages
+   ne peuvent plus se connecter.
    Le script vérifie d'abord que chaque ligne de `users` a un compte Auth, qu'il
    n'y a pas d'e-mail en double ni de tâche/note orpheline ; sinon il s'arrête
    sans rien modifier. Il supprime aussi les anciennes politiques RLS de ces
