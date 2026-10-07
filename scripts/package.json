@@ -1,0 +1,12 @@
+{
+  "name": "hm-global-scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate-users": "node migrate-users-to-auth.mjs",
+    "check-anon": "node check-anon-access.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.117.2"
+  }
+}

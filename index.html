@@ -105,6 +105,8 @@ const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 let me = null, tab = '', cid = null, vLang = 'fr-FR', vText = '', vTrans = '', rec = null;
 const G = id => document.getElementById(id);
+// Échappe tout texte (base ou API externe) avant de l'injecter via innerHTML.
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const today = () => new Date().toISOString().split('T')[0];
 
 async function api(table, opts = {}) {
@@ -118,15 +120,24 @@ async function api(table, opts = {}) {
   return data || [];
 }
 
+function loginErr(msg) { G('li-err').textContent = msg; G('li-err').style.display = 'block'; }
+
 async function doLogin() {
   const email = G('li-email').value.trim();
   const pass = G('li-pass').value;
   G('li-err').style.display = 'none';
   G('li-btn').innerHTML = '<span class="spinner"></span>';
-  const { data } = await sb.from('users').select('*').eq('email', email).eq('password', pass);
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+  if (error) { G('li-btn').textContent = 'Se connecter'; loginErr('Email ou mot de passe incorrect'); return; }
+  await enterApp(data.user);
   G('li-btn').textContent = 'Se connecter';
-  if (!data || !data.length) { G('li-err').textContent = 'Email ou mot de passe incorrect'; G('li-err').style.display = 'block'; return; }
-  me = data[0];
+}
+
+// Le rôle (admin/collab) vient de la table profiles, protégée par RLS.
+async function enterApp(user) {
+  const { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+  if (!profile) { await sb.auth.signOut(); loginErr('Aucun profil associé à ce compte'); return; }
+  me = profile;
   G('login').classList.remove('active');
   G('app').classList.add('active');
   G('hd-av').textContent = me.name.slice(0,2).toUpperCase();
@@ -137,7 +148,10 @@ async function doLogin() {
   sw(me.role === 'admin' ? 'dashboard' : 'planning');
 }
 
-function doLogout() { me = null; cid = null; G('app').classList.remove('active'); G('login').classList.add('active'); }
+async function doLogout() { await sb.auth.signOut(); me = null; cid = null; G('app').classList.remove('active'); G('login').classList.add('active'); }
+
+// Reprend la session Supabase Auth après un rechargement de la page.
+sb.auth.getSession().then(({ data }) => { if (data.session) enterApp(data.session.user); });
 
 function setupNav() {
   const tabs = me.role === 'admin'
@@ -153,19 +167,19 @@ function render() {
   ({dashboard: rDash, collaborateurs: rCollabs, clients: rClients, planning: rPlan, vocal: rVocal, projets: rProjets}[tab])?.();
 }
 
-const bdg = s => `<span class="badge ${s==='terminé'?'bok':s==='en cours'?'bwip':'bwait'}">${s}</span>`;
+const bdg = s => `<span class="badge ${s==='terminé'?'bok':s==='en cours'?'bwip':'bwait'}">${esc(s)}</span>`;
 
 async function rDash() {
   G('cont').innerHTML = '<div style="text-align:center;padding:40px;"><span class="spinner" style="border-color:rgba(60,40,80,0.2);border-top-color:var(--hm-rose);"></span></div>';
   const [users, tasks, clients] = await Promise.all([
-    sb.from('users').select('*').eq('role','collab').then(r=>r.data||[]),
+    sb.from('profiles').select('*').eq('role','collab').then(r=>r.data||[]),
     sb.from('tasks').select('*').then(r=>r.data||[]),
     sb.from('clients').select('*').then(r=>r.data||[])
   ]);
   const ec = tasks.filter(t=>t.status==='en cours').length;
   const th = tasks.reduce((s,t)=>s+(t.hours||0),0).toFixed(0);
   G('cont').innerHTML = `
-    <h1 class="stit">Bonjour, ${me.name} 👋</h1>
+    <h1 class="stit">Bonjour, ${esc(me.name)} 👋</h1>
     <p class="smut">${new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p>
     <div class="g4" style="margin-bottom:22px;">
       ${[{i:'📋',v:tasks.length,l:'Tâches',c:'var(--hm-dark)'},{i:'⏱',v:th+'h',l:'Heures',c:'var(--hm-rose)'},{i:'🏢',v:clients.length,l:'Clients',c:'var(--hm-blue)'},{i:'🔄',v:ec,l:'En cours',c:'var(--hm-purple)'}]
@@ -178,8 +192,8 @@ async function rDash() {
         const h = ct.reduce((s,t)=>s+(t.hours||0),0).toFixed(1);
         return `<div class="card chov" onclick="viewC('${c.id}')">
           <div style="display:flex;align-items:center;gap:11px;margin-bottom:13px;">
-            <div class="avlg">${c.name.slice(0,2).toUpperCase()}</div>
-            <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${c.name}</div><div style="font-size:11px;color:#999;">Collaborateur senior</div></div>
+            <div class="avlg">${esc(c.name.slice(0,2).toUpperCase())}</div>
+            <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${esc(c.name)}</div><div style="font-size:11px;color:#999;">Collaborateur senior</div></div>
           </div>
           <div class="g3">
             ${[{l:'Tâches',v:ct.length,c:'var(--hm-dark)'},{l:'Heures',v:h+'h',c:'var(--hm-rose)'},{l:'En cours',v:ct.filter(t=>t.status==='en cours').length,c:'var(--hm-blue)'}]
@@ -194,7 +208,7 @@ async function rDash() {
 async function rCollabs() {
   G('cont').innerHTML = '<h1 class="stit">Collaborateurs</h1><div style="text-align:center;padding:30px;"><span class="spinner" style="border-color:rgba(60,40,80,0.2);border-top-color:var(--hm-rose);"></span></div>';
   const [users, tasks] = await Promise.all([
-    sb.from('users').select('*').eq('role','collab').then(r=>r.data||[]),
+    sb.from('profiles').select('*').eq('role','collab').then(r=>r.data||[]),
     sb.from('tasks').select('*').then(r=>r.data||[])
   ]);
   G('cont').innerHTML = `<h1 class="stit">Collaborateurs</h1>
@@ -202,8 +216,8 @@ async function rCollabs() {
       const ct = tasks.filter(t=>t.user_id===c.id);
       const h = ct.reduce((s,t)=>s+(t.hours||0),0).toFixed(1);
       return `<div class="card chov" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;" onclick="viewC('${c.id}')">
-        <div style="display:flex;align-items:center;gap:13px;"><div class="avlg">${c.name.slice(0,2).toUpperCase()}</div>
-        <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${c.name}</div><div style="font-size:12px;color:#999;">${c.email}</div></div></div>
+        <div style="display:flex;align-items:center;gap:13px;"><div class="avlg">${esc(c.name.slice(0,2).toUpperCase())}</div>
+        <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${esc(c.name)}</div><div style="font-size:12px;color:#999;">${esc(c.email)}</div></div></div>
         <div style="display:flex;gap:18px;align-items:center;">
           <div style="text-align:center;"><div style="font-size:17px;font-weight:500;color:var(--hm-rose);">${ct.length}</div><div style="font-size:10px;color:#999;">tâches</div></div>
           <div style="text-align:center;"><div style="font-size:17px;font-weight:500;color:var(--hm-blue);">${h}h</div><div style="font-size:10px;color:#999;">heures</div></div>
@@ -218,7 +232,7 @@ async function viewC(uid) { cid = uid; rCollab(); }
 async function rCollab() {
   G('cont').innerHTML = '<div style="text-align:center;padding:40px;"><span class="spinner" style="border-color:rgba(60,40,80,0.2);border-top-color:var(--hm-rose);"></span></div>';
   const [uRes, tasks, notes, clients] = await Promise.all([
-    sb.from('users').select('*').eq('id', cid).then(r=>r.data?.[0]),
+    sb.from('profiles').select('*').eq('id', cid).then(r=>r.data?.[0]),
     sb.from('tasks').select('*, clients(name)').eq('user_id', cid).order('date', {ascending:false}).then(r=>r.data||[]),
     sb.from('notes').select('*').eq('user_id', cid).order('date', {ascending:false}).then(r=>r.data||[]),
     sb.from('clients').select('*').then(r=>r.data||[])
@@ -228,10 +242,10 @@ async function rCollab() {
   G('cont').innerHTML = `
     <button class="bbtn" onclick="cid=null;render();">← Retour</button>
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:22px;padding:16px;background:#fff;border-radius:12px;border:0.5px solid rgba(60,40,80,0.1);">
-      <div class="avlg" style="width:52px;height:52px;">${c.name.slice(0,2).toUpperCase()}</div>
+      <div class="avlg" style="width:52px;height:52px;">${esc(c.name.slice(0,2).toUpperCase())}</div>
       <div style="flex:1;">
-        <div style="font-size:18px;font-weight:500;color:var(--hm-dark);">${c.name}</div>
-        <div style="font-size:12px;color:#999;margin-bottom:8px;">Collaborateur senior · ${c.email}</div>
+        <div style="font-size:18px;font-weight:500;color:var(--hm-dark);">${esc(c.name)}</div>
+        <div style="font-size:12px;color:#999;margin-bottom:8px;">Collaborateur senior · ${esc(c.email)}</div>
         <div class="stat-bar" style="width:${Math.min(100,parseFloat(h)/20*100)}%;"></div>
       </div>
     </div>
@@ -241,15 +255,15 @@ async function rCollab() {
     </div>
     <div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:10px;">Tâches</div>
     ${tasks.length ? tasks.map(t=>`<div class="card" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:2px;">${t.title}</div>
-      <div style="font-size:11px;color:#999;">🏢 ${t.clients?.name||'—'} · 📅 ${t.date} · ⏱ ${t.hours}h</div></div>
+      <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:2px;">${esc(t.title)}</div>
+      <div style="font-size:11px;color:#999;">🏢 ${esc(t.clients?.name||'—')} · 📅 ${esc(t.date)} · ⏱ ${esc(t.hours)}h</div></div>
       ${bdg(t.status)}</div>`).join('') : '<p style="font-size:13px;color:#999;margin-bottom:16px;">Aucune tâche.</p>'}
     <div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin:18px 0 10px;">Notes vocales</div>
     ${notes.length ? notes.map(n=>`<div class="card" style="margin-bottom:9px;">
-      <div style="font-size:11px;color:#999;margin-bottom:9px;">📅 ${n.date}</div>
+      <div style="font-size:11px;color:#999;margin-bottom:9px;">📅 ${esc(n.date)}</div>
       <div class="tbox">
-        <div class="tpan"><div class="tlng">🇫🇷 Français</div><div class="ttxt">${n.fr||''}</div></div>
-        <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">🇹🇷 Türkçe</div><div class="ttxt">${n.tr||''}</div></div>
+        <div class="tpan"><div class="tlng">🇫🇷 Français</div><div class="ttxt">${esc(n.fr)}</div></div>
+        <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">🇹🇷 Türkçe</div><div class="ttxt">${esc(n.tr)}</div></div>
       </div></div>`).join('') : '<p style="font-size:13px;color:#999;">Aucune note vocale.</p>'}`;
 }
 
@@ -270,9 +284,9 @@ async function rClients() {
       ${clients.map((c,i)=>`<div class="card">
         <div style="display:flex;align-items:center;gap:9px;margin-bottom:10px;">
           <div style="width:36px;height:36px;border-radius:9px;background:var(--hm-light);display:flex;align-items:center;justify-content:center;font-size:17px;">${ic[i%ic.length]}</div>
-          <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);">${c.name}</div><div style="font-size:11px;color:#999;">${c.sector||''}</div></div>
+          <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);">${esc(c.name)}</div><div style="font-size:11px;color:#999;">${esc(c.sector)}</div></div>
         </div>
-        <div style="font-size:11px;color:#aaa;">📍 ${c.ville||''}</div>
+        <div style="font-size:11px;color:#aaa;">📍 ${esc(c.ville)}</div>
         <div style="font-size:12px;color:var(--hm-rose);margin-top:8px;">${tasks.filter(t=>t.client_id===c.id).length} tâche(s)</div>
       </div>`).join('')}
     </div>`;
@@ -290,7 +304,8 @@ function showAddC() {
 
 async function addC() {
   const n = G('nc-n').value.trim(); if(!n) return;
-  await sb.from('clients').insert({name:n, sector:G('nc-s').value.trim(), ville:G('nc-v').value.trim()});
+  const{error}=await sb.from('clients').insert({name:n, sector:G('nc-s').value.trim(), ville:G('nc-v').value.trim()});
+  if(error){alert('Enregistrement impossible : '+error.message);return;}
   rClients();
 }
 
@@ -306,8 +321,8 @@ async function rPlan() {
     <p class="smut">${tasks.length} tâche(s) · ${h}h total</p>
     <div id="atf" style="display:none;margin-bottom:14px;"></div>
     ${tasks.length ? tasks.map(t=>`<div class="card" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:2px;">${t.title}</div>
-      <div style="font-size:11px;color:#999;">🏢 ${t.clients?.name||'—'} · 📅 ${t.date} · ⏱ ${t.hours}h</div></div>
+      <div><div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:2px;">${esc(t.title)}</div>
+      <div style="font-size:11px;color:#999;">🏢 ${esc(t.clients?.name||'—')} · 📅 ${esc(t.date)} · ⏱ ${esc(t.hours)}h</div></div>
       ${bdg(t.status)}</div>`).join('')
     : '<div style="text-align:center;padding:40px;color:#ccc;"><div style="font-size:34px;margin-bottom:10px;">📋</div><p style="font-size:13px;">Aucune tâche.</p></div>'}`;
 }
@@ -318,7 +333,7 @@ async function showAddT() {
   G('atf').innerHTML=`<div class="card"><div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:10px;">Nouvelle tâche</div>
     <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px;margin-bottom:8px;">
       <input id="nt-ti" placeholder="Titre de la tâche"/>
-      <select id="nt-cl"><option value="">Client...</option>${clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select>
+      <select id="nt-cl"><option value="">Client...</option>${clients.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>
       <input id="nt-h" type="number" placeholder="Heures" step="0.5"/>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
@@ -332,7 +347,8 @@ async function showAddT() {
 async function addT() {
   const ti=G('nt-ti').value.trim(), cl=G('nt-cl').value, h=parseFloat(G('nt-h').value);
   if(!ti||!cl||!h) return;
-  await sb.from('tasks').insert({user_id:me.id, client_id:cl, title:ti, hours:h, date:G('nt-d').value, status:G('nt-st').value});
+  const{error}=await sb.from('tasks').insert({user_id:me.id, client_id:cl, title:ti, hours:h, date:G('nt-d').value, status:G('nt-st').value});
+  if(error){alert('Enregistrement impossible : '+error.message);return;}
   rPlan();
 }
 
@@ -352,18 +368,18 @@ async function rVocal() {
       </div>
       <div id="vr" style="display:${vText?'block':'none'};">
         <div class="tbox" style="margin-bottom:12px;">
-          <div class="tpan"><div class="tlng">${vLang==='fr-FR'?'🇫🇷 Original':'🇹🇷 Orijinal'}</div><div class="ttxt" id="v-ori">${vText}</div></div>
-          <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">${vLang==='fr-FR'?'🇹🇷 Traduction':'🇫🇷 Traduction'}</div><div class="ttxt" id="v-tr">${vTrans||'Traduction en cours...'}</div></div>
+          <div class="tpan"><div class="tlng">${vLang==='fr-FR'?'🇫🇷 Original':'🇹🇷 Orijinal'}</div><div class="ttxt" id="v-ori">${esc(vText)}</div></div>
+          <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">${vLang==='fr-FR'?'🇹🇷 Traduction':'🇫🇷 Traduction'}</div><div class="ttxt" id="v-tr">${esc(vTrans||'Traduction en cours...')}</div></div>
         </div>
         <div style="display:flex;gap:7px;"><button onclick="saveN()" class="abtn">💾 Enregistrer</button><button onclick="vText='';vTrans='';rVocal();" class="gbtn">Effacer</button></div>
       </div>
     </div>
     <div style="font-size:13px;font-weight:500;color:var(--hm-dark);margin-bottom:11px;">Notes enregistrées</div>
     ${notes.length ? notes.map(n=>`<div class="card" style="margin-bottom:9px;">
-      <div style="font-size:11px;color:#999;margin-bottom:9px;">📅 ${n.date}</div>
+      <div style="font-size:11px;color:#999;margin-bottom:9px;">📅 ${esc(n.date)}</div>
       <div class="tbox">
-        <div class="tpan"><div class="tlng">🇫🇷 Français</div><div class="ttxt">${n.fr||''}</div></div>
-        <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">🇹🇷 Türkçe</div><div class="ttxt">${n.tr||''}</div></div>
+        <div class="tpan"><div class="tlng">🇫🇷 Français</div><div class="ttxt">${esc(n.fr)}</div></div>
+        <div class="tpan"><div class="tlng" style="color:var(--hm-blue);">🇹🇷 Türkçe</div><div class="ttxt">${esc(n.tr)}</div></div>
       </div></div>`).join('') : '<p style="font-size:13px;color:#aaa;">Aucune note.</p>'}`;
 }
 
@@ -393,7 +409,8 @@ function startV() {
 async function saveN() {
   if(!vText) return;
   const isFR = vLang==='fr-FR';
-  await sb.from('notes').insert({user_id:me.id, fr:isFR?vText:vTrans, tr:isFR?vTrans:vText, date:today()});
+  const{error}=await sb.from('notes').insert({user_id:me.id, fr:isFR?vText:vTrans, tr:isFR?vTrans:vText, date:today()});
+  if(error){alert('Enregistrement impossible : '+error.message);return;}
   vText=''; vTrans=''; rVocal();
 }
 
@@ -409,14 +426,14 @@ async function rProjets() {
   G('cont').innerHTML = `<h1 class="stit">Mes Projets</h1>
     ${groups.length ? groups.map(g=>`<div class="card" style="margin-bottom:13px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-        <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${g.client?.name||'—'}</div>
-        <div style="font-size:11px;color:#999;">${g.client?.sector||''} · ${g.client?.ville||''}</div></div>
+        <div><div style="font-size:14px;font-weight:500;color:var(--hm-dark);">${esc(g.client?.name||'—')}</div>
+        <div style="font-size:11px;color:#999;">${esc(g.client?.sector)} · ${esc(g.client?.ville)}</div></div>
         <div style="text-align:right;"><div style="font-size:16px;font-weight:500;color:var(--hm-rose);">${g.h}h</div><div style="font-size:10px;color:#999;">total</div></div>
       </div>
       <div class="stat-bar" style="margin-bottom:11px;width:${Math.min(100,parseFloat(g.h)/10*100)}%;"></div>
       ${g.tasks.map(t=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--hm-light);border-radius:7px;margin-bottom:5px;">
-        <span style="font-size:12px;color:var(--hm-dark);">${t.title}</span>
-        <div style="display:flex;gap:7px;align-items:center;"><span style="font-size:11px;color:#aaa;">${t.hours}h</span>${bdg(t.status)}</div>
+        <span style="font-size:12px;color:var(--hm-dark);">${esc(t.title)}</span>
+        <div style="display:flex;gap:7px;align-items:center;"><span style="font-size:11px;color:#aaa;">${esc(t.hours)}h</span>${bdg(t.status)}</div>
       </div>`).join('')}
     </div>`).join('') : '<p style="font-size:13px;color:#aaa;">Aucun projet assigné.</p>'}`;
 }
